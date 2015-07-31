@@ -1,0 +1,81 @@
+#!/bin/sh
+#
+#  Created 2105-05-07 by sjones@hep.ph.liv.ac.uk
+#
+# fallow        This shell script takes care of starting and stopping
+#               fallow.
+#
+# chkconfig: - 80 30
+# description: fallow is a daemon for draining a cluster for multicore jobs.
+# processname: fallow
+# config: none
+
+# Source function library
+if [ -f /etc/rc.d/init.d/functions ]; then
+. /etc/rc.d/init.d/functions
+elif [ -f /etc/init.d/functions ]; then
+. /etc/init.d/functions
+elif [ -f /etc/rc.d/functions ]; then
+. /etc/rc.d/functions
+fi
+
+lockfile=/var/lock/subsys/fallow
+
+RETVAL=0
+
+# See how we were called.
+case "$1" in
+  start)
+        echo -n "Starting fallow: "
+        touch  $lockfile
+        ps -e | grep runFallow > /dev/null
+        if [ $? == 1 ]; then
+          nohup  /root/scripts/runFallow.sh &> /dev/null &
+        fi
+        echo_success
+        echo
+        ;;
+  stop)
+        echo -n "Shutting down fallow: "
+        if [ -f $lockfile ]; then
+          rm $lockfile
+        fi
+        ps -e | grep runFallow > /dev/null; while [ $? == 0 ]; do 
+          sleep 2; ps -e | grep runFallow > /dev/null; 
+        done
+        echo_success
+        echo
+        ;;
+  restart)
+        echo -n "Shutting down fallow: "
+        if [ -f $lockfile ]; then
+          rm $lockfile
+        fi      
+        ps -e | grep runFallow > /dev/null; while [ $? == 0 ]; do 
+          sleep 2; ps -e | grep runFallow > /dev/null; 
+        done
+        echo -n "Starting fallow: "
+        touch  $lockfile
+        ps -e | grep runFallow > /dev/null
+        if [ $? == 1 ]; then
+          nohup  /root/scripts/runFallow.sh &> /dev/null &
+        fi
+        echo_success
+        echo
+        ;;
+  status)
+        if [  ! -e $lockfile ]; then
+          echo fallow is stopped
+          RETVAL=3
+        else
+          echo fallow is running
+          RETVAL=0
+        fi
+        ;;
+  *)
+        echo "Usage: fallow {start|stop|restart|status}"
+        RETVAL=2
+esac
+
+exit $RETVAL
+

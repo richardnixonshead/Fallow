@@ -1,0 +1,132 @@
+Fallow
+
+0.0 Contents
+
+1.0 Introduction 
+2.0 Config Settings
+3.0 Principles of Operation
+4.0 Preferring Multicore Jobs
+  4.1 Algorithmic
+  4.2 User Priorities
+  4.3 GROUP_SORT_EXPR
+5.0 Download, Install, Configure
+
+1.0 Introduction 
+
+Fallow is a tool based on the older idea, DrainBoss. Fallow is smaller, simpler and more precise. The integral term (which was complex) has been dropped and the proportional controller has been simplified.
+
+2.0 Config Settings
+
+To use Fallow, some new config is required on the workernodes. The reason for this is described below in the Principles of Operation section.
+
+Lines in the /etc/condor/condor_config.local file need to be amended to hold the OnlyMulticore attribute, as show here.
+
+ ENABLE_PERSISTENT_CONFIG = TRUE
+ PERSISTENT_CONFIG_DIR = /etc/condor/ral
+ STARTD_ATTRS = $(STARTD_ATTRS) StartJobs, RalNodeOnline, OnlyMulticore
+ STARTD.SETTABLE_ATTRS_ADMINISTRATOR = StartJobs , OnlyMulticore
+ OnlyMulticore = False
+
+And the START classad, in the same file, has to be modified to use the OnlyMulticore attribute, as follows.
+
+START =  (ifThenElse(OnlyMulticore =?= True,ifThenElse(RequestCpus =?= 8, True, False) ,True ) )
+
+The OnlyMulticore attribute is a persistent, settable attribute that can be altered by (say) an admin user or a script. The START classad, which is consulted before a job is started, will only yield True for a specific job if OnlyMulticore is False, or OnlyMulticore is True and the job needs 8 cpus. Thus the node can be controlled to bar it from running single-core jobs by making OnlyMulticore True.
+
+3.0 Principles of Operation
+
+Fallow takes a parameter that tells it how many unislots (single cores) should be used ideally by multi-core jobs. This is called the setpoint.
+
+Fallow detects how many multi-core and single-core jobs are running and queued, and uses the OnlyMulticore attribute (see below) to control whether nodes are allowed or not to run single-core jobs. A node that is not allowed to run single-core jobs is, effectively, draining.
+
+It does nothing if there are no jobs or if there are only multi-core jobs. This is OK because the cluster is already effectively draining if there are no single-core jobs in the queue, and it's pointless doing anything if there are no jobs at all in the queue.
+
+If there are only single-cores in the queue, Fallow sets OnlyMulticore on all nodes to False, allowing all nodes to run any type of job. This is OK because there are no multi-core jobs waiting, so no reservations are wanted.
+
+If there are multi-core and single-core jobs in the queue, Fallow uses the following algorithm.
+
+Fallow works out how many multi-core (8 core) slots are needed to achieve the setpoint. Fallow exits if there are already enough running (Fallow never stops a running job to achieve the setpoint.)
+
+Fallow then subtracts the running jobs from the desired to find how many newly drained nodes would be needed to reach the desired state. It then discounts nodes that are already OnlyMulticore but not yet with an 8 core slot; these are in progress. This gives the number of new nodes to set OnlyMulticore. Fallow then tries to find a set of nodes that are not OnlyMulticore , and sets them OnlyMulticore, starting the drain. Following this algorithm, the system should eventually converge on the correct number of multi-core jobs as desired.
+
+To avoid confusion, I haven't yet mentioned how newly drained nodes are put back online. This is actually done as the first thing in Fallow. It scans all the nodes, finding ones that are OnlyMulticore but which have already got an 8 core slot. It turns OnlyMulticore off for those nodes, putting them back into service.
+
+4.0 Preferring Multicore Jobs
+
+Once a node has been drained so it has at least 8 slots, it would be wrong to let it run sinle core jobs because that would waste the effort of draining the node. So a way is needed to prevent that.
+
+4.1 Algorithmic
+
+To recap, for this system to work, it is necessary for it to prefer the start multi-core jobs over single-core jobs. This is because the drain process described above is futile if single-core jobs grab the newly prepared nodes. The system at Liverpool ensures this through various measures. The first and most effective measure is inherent in the Fallow algorithm. As a node drains in OnlyMulticore mode, single-core jobs are not allowed. At some point, 8 or more slots will become free. The system will schedule a multicore job in those slots, because single-core jobs are barred. The next run of Fallow will put the node back in service by allowing single-core jobs, but it is too late - a multicore job is (usually) already running, assuming any were queued.
+
+The only exception to this is a race condition. Say the condor scheduler considers a draining (OnlyMulticore) node and finds that it has too few free cores to schedule a multi-core job. Then say that between then, and the next run of Fallow, enough cores become free. Fallow will then run and turn off OnlyMulticore. The first run of the scheduler after Fallow can then start a single-core job, which spoils the plan.
+
+Fallow has logic to counter this. After Fallow discovers a node has enough cores to turn OnlyMulticore off, it waits for a period exceeding one scheduling cycle to ensure that the scheduler has a chance to put a multi-core job on it. Only then does fallow turn OnlyMulticore off. The scheduling cycle period is given to Fallow as a command line parameter.
+
+It is recommended anyway that the scheduler should run much more frequently than Fallow, to minimise the chance that this window will be available. There are also other measures that can be used to give more certainly over this aspect, described next for the sake of completeness.
+
+4.2 User Priorities
+
+On our cluster, we define accounting groups and each job is assigned to some user that belongs to an accounting group (with reference to his proxy certificate and via an authentication and mapping system called lcmaps and Argus). The rules that do this look something like this:
+
+LivAcctGroup = strcat("group_",toUpper(
+ifThenElse(regexp("sgmatl34",Owner),"highprio",
+ifThenElse(regexp("sgmops11",Owner),"highprio",
+ifThenElse(regexp("^alice", x509UserProxyVOName), "alice",
+ifThenElse(regexp("^atlas", x509UserProxyVOName), "atlas",
+ifThenElse(regexp("^biomed", x509UserProxyVOName), <…. and so on …>
+"nonefound")))))))))))))))))))))))))))))))) )) ))
+
+LivAcctSubGroup = strcat(regexps("([A-Za-z0-9]+[A-Za-z])\d+", Owner,
+"\1"),ifThenElse(RequestCpus > 1,"_mcore","_score"))
+
+AccountingGroup = strcat(LivAcctGroup, ".", LivAcctSubGroup, ".", Owner)
+
+SUBMIT_EXPRS = $(SUBMIT_EXPRS) LivAcctGroup, LivAcctSubGroup, AccountingGroup
+
+The idea is that we have a major accounting group and a sub accounting group for each job which is put in the SUBMIT_EXPRS as a parameter. The sub accounting group is always _mcore or _score for reasons that will be obvious in a minute. When I run condor_userprio, I see this for e.g. ATLAS (some cols omitted, but note the priority factor, last col).
+
+group_ATLAS 0.65 Regroup 1000.00
+pilatl_score.pilatl08@ph.liv.ac.uk 500.00 1000.00
+atlas_score.atlas006@ph.liv.ac.uk 500.33 1000.00
+prdatl_mcore.prdatl28@ph.liv.ac.uk 49993.42 1.00 
+pilatl_score.pilatl24@ph.liv.ac.uk 96069.21 1000.00
+prdatl_score.prdatl28@ph.liv.ac.uk 202372.86 1000.00
+
+The priority factor for the _more subgroup has been set to 1 , using
+
+condor_userprio -setfactor prdatl_mcore.prdatl28@ph.liv.ac.uk 1 
+
+If the default priority factor is (say) 1000, then this makes mcore jobs much more likely to be selected to run than score jobs. Thus if a wide slot is asking for jobs, they it should get a wide job. This seems to be borne out in experience.
+
+4.3 GROUP_SORT_EXPR
+
+Andrew Lahiffe has had good results from the GROUP_SORT_EXPR, but I haven't tried it out yet.
+
+5.0 Download, Install, Configure
+
+The Fallow controller is available as an RPM in this Yum repository:
+
+http://www.sysadmin.hep.ac.uk/rpms/fabric-management/RPMS.vomstools/
+
+It's an RPM so it can be installed on the ARC/Condor headnode with rpm or yum. Once installed, open
+
+/root/scripts/runFallow.sh
+
+script and you can modify the line that runs the script, i.e.
+
+./fallow.py -s 350 -n 61
+
+The -s parameter is the number of unislots (single-cores) to be reserved for multicore jobs. The -n parameter is the negotiator interval + 1. Change this to your site specific value. You can then start the fallow service, i.e.
+
+service fallow start
+
+It will write a log file to /root/scripts/fallow.log
+
+6.0 Development
+
+Fallow is developed in a public GitHub repository, and can be obtained like
+this:
+
+git clone https://github.com/sjones-hep-ph-liv-ac-uk/Fallow.git
+
