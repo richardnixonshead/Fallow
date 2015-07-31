@@ -125,8 +125,14 @@ It will write a log file to /root/scripts/fallow.log
 
 6.0 Development
 
-Fallow is developed in a public GitHub repository, and can be obtained like
-this:
+Fallow is developed in a public GitHub repository, and can be obtained like this:
+# mkdir dev
+# cd dev
+# git clone https://github.com/sjones-hep-ph-liv-ac-uk/Fallow.git
 
-git clone https://github.com/sjones-hep-ph-liv-ac-uk/Fallow.git
+The GitHub repository also contains an environment to make RPMs.
+To use it:
+
+# cd Fallow/buildAnRpm/
+# ./buildFallowRpm.sh
 
