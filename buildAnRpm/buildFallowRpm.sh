@@ -12,7 +12,9 @@ mkdir $D
 mv fallow.py $D
 mv runFallow.sh $D
 mv fallow $D
+mv onlyMulticore* $D
 rm *[Ff]allow*
+rm onlyMulticore*
 
 tar -cvf $D.tar $D
 rm -rf $D
