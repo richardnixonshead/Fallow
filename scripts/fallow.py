@@ -117,6 +117,8 @@ class Node :
     self.slots = []
     self.current_slot = {}
     self.hasSlotWith8 = False
+    self.rank = 0             # Rank for draining
+    self.singleCoreRunning = 0 # number of single Core jobs running on the node
 
   def __cmp__(self, other):
     if self.totalSlotCpus < other.totalSlotCpus:
@@ -204,13 +206,19 @@ class Node :
         if self.totalSlotCpus == 0 and halves[0] == 'TotalSlotCpus':
           self.totalSlotCpus = int(halves[1])
         if halves[0] == 'Cpus':   # When in first slot, how much is slack. When in later slots, how much is used.
-          if int(halves[1]) >= 8:
-            self.hasSlotWith8 = True
 
           if slot_count == 0:
             self.slack = self.slack + int(halves[1])
+            if int(halves[1]) >= 8:
+              self.hasSlotWith8 = True
           else:
             self.totalUsed = self.totalUsed + int(halves[1])  
+            if int(halves[1]) == 1:
+              self.singleCoreRunning = self.singleCoreRunning + 1
+    if self.slack == 8:
+      self.rank = 8
+    else:
+      self.rank = self.slack + self.singleCoreRunning / ( 8 - self.slack )
     return True
 
 
@@ -381,7 +389,7 @@ if (mcq >  0 and scq > 0):
 
   disallowed = []
   newlyPreparing = 0
-  for n in nodeList:
+  for n in sorted(nodeList, reverse=True, key=lambda node: node.rank):
     if(n.getHasSlotWith8() == False):
       if(n.getOnlyMulticore() == False):
         if (delta > 0):
@@ -391,7 +399,6 @@ if (mcq >  0 and scq > 0):
           disallowed.append(n)
 
   print 'INFO Started to prepare ',newlyPreparing,' nodes for mcore.'
-  temp = ''
   for n in disallowed:
     print 'INFO Preparing ',n.getName(), ' for mcore at ',datetime.utcnow()
 sys.exit(0)
