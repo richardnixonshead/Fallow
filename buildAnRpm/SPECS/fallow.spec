@@ -45,6 +45,8 @@ chkconfig fallow on
 %files
 %defattr(-,root,root)
 /root/scripts/fallow.py
+/root/scripts/fallow.pyo
+/root/scripts/fallow.pyc
 /root/scripts/runFallow.sh
 /root/scripts/onlyMulticoreOff.sh
 /root/scripts/onlyMulticoreOn.sh
