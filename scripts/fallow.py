@@ -116,6 +116,7 @@ class Node :
     self.slots = []
     self.current_slot = {}
     self.hasSlotWith8 = False
+    self.hasSlackOf8 = False
 
   def __cmp__(self, other):
     if self.totalSlotCpus < other.totalSlotCpus:
@@ -144,6 +145,9 @@ class Node :
 
   def getHasSlotWith8 (self):
     return self.hasSlotWith8
+
+  def getSlackOf8 (self):
+    return self.hasSlackOf8
 
   def getName (self):
     return self.name
@@ -208,10 +212,11 @@ class Node :
 
           if slot_count == 0:
             self.slack = self.slack + int(halves[1])
+            if self.slack >= 8:
+              self.hasSlackOf8 = True
           else:
             self.totalUsed = self.totalUsed + int(halves[1])  
     return True
-
 
 #--- sub
 def makeCmdTakeHold (node):
@@ -317,12 +322,12 @@ if (len(nodeList) == 0):
   sys.exit(1)
 
 # Find any node which disallows single cores, while having
-# an 8 core slot. For these, allow single cores, but only
+# 8 cores slack. For these, allow single cores, but only
 # after waiting for one negotiator cycle
 readyList = []
 for n in nodeList:
   if(n.getOnlyMulticore()):
-    if(n.getHasSlotWith8()):
+    if(n.getHasSlackOf8()):
       readyList.append(n)
 if (len(readyList) > 0):
   time.sleep(negDelay)
@@ -357,28 +362,30 @@ if (mcq >  0 and scq > 0):
   print 'INFO Would want to see ',delta,' nodes being prepared for mcore.'
 
   # We want to discount nodes that are OnlyMulticore but 
-  # not yet with 8 core slot
+  # not yet with 8 cores of slack (or more)
   alreadyBeingPrepared = 0
   for n in nodeList:
     if(n.getOnlyMulticore()):
-      if(n.getHasSlotWith8() == False):
+      if(n.getHasSlackOf8() == False):
         alreadyBeingPrepared = alreadyBeingPrepared + 1
   print 'INFO The are already ',alreadyBeingPrepared,' nodes being prepared for mcore.'
   delta = delta - alreadyBeingPrepared
   
   # Go over all the nodes and find a set (sized: delta)
-  # where each node is a) without an 8 core slot and
+  # where each node is:
+  # a) without 8 cores of slack (at least) 
   # b) not OnlyMulticore
   # Make each OnlyMulticore
 
   newlyPreparing = 0
   for n in nodeList:
-    if(n.getHasSlotWith8() == False):
+    if(n.getHasSlackOf8 () == False):
       if(n.getOnlyMulticore() == False):
         if (delta > 0):
           newlyPreparing = newlyPreparing + 1
           delta = delta - 1
           n.disallowSinglecore()
+          print 'INFO Will prepare ',n.getName(),' for mcore.'
 
   print 'INFO Started to prepare ',newlyPreparing,' nodes for mcore.'
 sys.exit(0)
