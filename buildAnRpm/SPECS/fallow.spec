@@ -2,7 +2,7 @@
 
 %define _topdir	 	%(echo $PWD)/
 %define name		fallow 
-%define version 	1.4
+%define version 	1.5
 %define release		1
 %define buildroot %{_topdir}/%{name}-%{version}-root
 
