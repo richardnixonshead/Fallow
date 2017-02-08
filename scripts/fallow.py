@@ -41,7 +41,6 @@ class Queue :
     return self.totalMultiJobsRunning * 8
 
 
-
   def __init__(self):
     self.jobs = {}
     self.totalQueued = 0
@@ -112,12 +111,13 @@ class Node :
     self.detectedCpus = 0    # Don't know
     self.totalSlotCpus = 0   # How much is available on this node
     self.totalUsed     = 0   # How much is used 
-    self.totalUsedSingle  = 0   # How much is used by single core jobs
+    self.singleCoreRunning  = 0   # How much is used by single core jobs
     self.slack         = 0   # How much is not used
     self.slots = []
     self.current_slot = {}
     self.hasSlotWith8 = False
     self.hasSlackOf8 = False
+    self.rank = 0 
 
   def __cmp__(self, other):
     if self.totalSlotCpus < other.totalSlotCpus:
@@ -144,11 +144,14 @@ class Node :
       return False
     return makeCmdTakeHold (self.name)
 
+  def getRank (self):
+    return self.rank
+
   def getTotalUsed (self):
     return self.totalUsed
 
-  def getTotalUsedSingle (self):
-    return self.totalUsedSingle
+  def getSingleCoreRunning (self):
+    return self.singleCoreRunning
 
   def getSlack (self):
     return self.slack
@@ -221,7 +224,12 @@ class Node :
             used = int(halves[1])
             self.totalUsed = self.totalUsed + used
             if (used == 1):
-              self.totalUsedSingle = self.totalUsedSingle + used
+              self.singleCoreRunning = self.singleCoreRunning + used
+
+    if self.slack >= 8:
+      self.rank = 0
+    else:
+      self.rank = self.slack + self.singleCoreRunning / float(( 8 - self.slack ))
               
     return True
 
@@ -387,11 +395,11 @@ if (mcq >  0 and scq > 0):
   # Make each of these OnlyMulticore
 
   newlyPreparing = 0
-  for n in nodeList:
+  for n in sorted(nodeList, reverse=True, key=lambda node: node.rank):
     if(n.getOnlyMulticore() == False):
       if(n.getHasSlackOf8 () == False):
         slack = n.getSlack()
-        usedByScore = n.getTotalUsedSingle()
+        usedByScore = n.getSingleCoreRunning()
         if (slack + usedByScore >= 8):
           if (delta > 0):
             newlyPreparing = newlyPreparing + 1
