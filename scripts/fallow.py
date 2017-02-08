@@ -112,6 +112,7 @@ class Node :
     self.detectedCpus = 0    # Don't know
     self.totalSlotCpus = 0   # How much is available on this node
     self.totalUsed     = 0   # How much is used 
+    self.totalUsedSingle  = 0   # How much is used by single core jobs
     self.slack         = 0   # How much is not used
     self.slots = []
     self.current_slot = {}
@@ -143,10 +144,19 @@ class Node :
       return False
     return makeCmdTakeHold (self.name)
 
+  def getTotalUsed (self):
+    return self.totalUsed
+
+  def getTotalUsedSingle (self):
+    return self.totalUsedSingle
+
+  def getSlack (self):
+    return self.slack
+
   def getHasSlotWith8 (self):
     return self.hasSlotWith8
 
-  def getSlackOf8 (self):
+  def getHasSlackOf8 (self):
     return self.hasSlackOf8
 
   def getName (self):
@@ -169,13 +179,6 @@ class Node :
       return True
     else:
       return False
-
-#  def setOnlyMulticore(self,state):
-#    slot = self.slots[0]
-#    if state: 
-#      slot['OnlyMulticore'] = 'True'
-#    else:
-#      slot['OnlyMulticore'] = 'False'
 
   def getState(self):
     slot = self.slots[0]
@@ -215,7 +218,11 @@ class Node :
             if self.slack >= 8:
               self.hasSlackOf8 = True
           else:
-            self.totalUsed = self.totalUsed + int(halves[1])  
+            used = int(halves[1])
+            self.totalUsed = self.totalUsed + used
+            if (used == 1):
+              self.totalUsedSingle = self.totalUsedSingle + used
+              
     return True
 
 #--- sub
@@ -368,25 +375,29 @@ if (mcq >  0 and scq > 0):
     if(n.getOnlyMulticore()):
       if(n.getHasSlackOf8() == False):
         alreadyBeingPrepared = alreadyBeingPrepared + 1
-  print 'INFO The are already ',alreadyBeingPrepared,' nodes being prepared for mcore.'
+  print 'INFO There are already ',alreadyBeingPrepared,' nodes being prepared for mcore.'
   delta = delta - alreadyBeingPrepared
   
-  # Go over all the nodes and find a set (sized: delta)
-  # where each node is:
-  # a) without 8 cores of slack (at least) 
-  # b) not OnlyMulticore
-  # Make each OnlyMulticore
+  # Go over all the nodes and find a set (size: delta)
+  # where each node :
+  # a) Allows single core (not OnlyMulticore)
+  # a) Does not already have 8 cores of slack or more
+  # c) Where slack + number of score >= 8
+  # 
+  # Make each of these OnlyMulticore
 
   newlyPreparing = 0
   for n in nodeList:
-    if(n.getHasSlackOf8 () == False):
-      if(n.getOnlyMulticore() == False):
-        if (delta > 0):
-          newlyPreparing = newlyPreparing + 1
-          delta = delta - 1
-          n.disallowSinglecore()
-          print 'INFO Will prepare ',n.getName(),' for mcore.'
-
+    if(n.getOnlyMulticore() == False):
+      if(n.getHasSlackOf8 () == False):
+        slack = n.getSlack()
+        usedByScore = n.getTotalUsedSingle()
+        if (slack + usedByScore >= 8):
+          if (delta > 0):
+            newlyPreparing = newlyPreparing + 1
+            delta = delta - 1
+            n.disallowSinglecore()
+            print 'INFO Preparing ',n.getName(),' for mcore.'
   print 'INFO Started to prepare ',newlyPreparing,' nodes for mcore.'
 sys.exit(0)
 
