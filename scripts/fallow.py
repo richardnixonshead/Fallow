@@ -356,27 +356,32 @@ scr = q.getTotalSingleJobsRunning()
 print 'INFO mcq', mcq, ', scq', scq, ', mcr', mcr, ', scr', scr
 
 if (mcq == 0 and scq == 0):
-  print 'INFO Nothing in the queue, so do nothing.'
-  sys.exit(0)
-if (mcq > 0 and scq == 0):
-  print 'INFO Only mcore in the queue, so do nothing.'
-  sys.exit(0)
-if (mcq == 0 and scq > 0):
-  print 'INFO Only score in the queue, so make all nodes allow score.'
+  print 'INFO Nothing at all queued, so all are automatically draining. Set onlyMulticore=0 on all nodes.'
   for n in nodeList:
     n.allowSinglecore()
   sys.exit(0)
+if (mcq > 0 and scq == 0):
+  print 'INFO Only mcore in queue, so all are automatically draining. Set onlyMulticore=0 on all nodes.'
+  for n in nodeList:
+    n.allowSinglecore()
+  sys.exit(0)
+if (mcq == 0 and scq > 0):
+  print 'INFO Only score in the queue, so draining would be futile. Set onlyMulticore=0 on all nodes.'
+  for n in nodeList:
+    n.allowSinglecore()
+  sys.exit(0)
+
 if (mcq >  0 and scq > 0):
   print 'INFO A mix of score and mcore in the queue, so this will need some judgement.'
   mcoreDesired = int(round(setPoint / 8.0))
-  if (mcr >= mcoreDesired ):
-    print 'INFO Already enough mcores running, so do nothing.'
-    sys.exit(0)
+  #if (mcr >= mcoreDesired ):
+  #  print 'INFO Already enough mcores running, so perhaps reduce draining.'
+  #  sys.exit(0)
 
   delta = mcoreDesired - mcr
   print 'INFO Would want to see ',delta,' nodes being prepared for mcore.'
 
-  # We want to discount nodes that are OnlyMulticore but 
+  # We want to discount nodes that are onlyMulticore but 
   # not yet with 8 cores of slack (or more)
   alreadyBeingPrepared = 0
   for n in nodeList:
@@ -385,27 +390,43 @@ if (mcq >  0 and scq > 0):
         alreadyBeingPrepared = alreadyBeingPrepared + 1
   print 'INFO There are already ',alreadyBeingPrepared,' nodes being prepared for mcore.'
   delta = delta - alreadyBeingPrepared
-  
-  # Go over all the nodes and find a set (size: delta)
-  # where each node :
-  # a) Allows single core (not OnlyMulticore)
-  # a) Does not already have 8 cores of slack or more
-  # c) Where slack + number of score >= 8
-  # 
-  # Make each of these OnlyMulticore
 
-  newlyPreparing = 0
-  for n in sorted(nodeList, reverse=True, key=lambda node: node.rank):
-    if(n.getOnlyMulticore() == False):
-      if(n.getHasSlackOf8 () == False):
-        slack = n.getSlack()
-        usedByScore = n.getSingleCoreRunning()
-        if (slack + usedByScore >= 8):
-          if (delta > 0):
-            newlyPreparing = newlyPreparing + 1
-            delta = delta - 1
-            n.disallowSinglecore()
-            print 'INFO Preparing ',n.getName(),' for mcore.'
-  print 'INFO Started to prepare ',newlyPreparing,' nodes for mcore.'
+  if (delta >= 0):
+    # We need more draining. 
+    # Go over all the nodes in nearest to being drained order and find a set (size: delta)
+    # where each node :
+    # a) Allows single core (not onlyMulticore)
+    # a) Does not already have 8 cores or more of slack 
+    # c) Where slack + number of score >= 8
+    # 
+    # Make each of these onlyMulticore
+  
+    newlyPreparing = 0
+    for n in sorted(nodeList, reverse=True, key=lambda node: node.rank):
+      if(n.getOnlyMulticore() == False):
+        if(n.getHasSlackOf8 () == False):
+          slack = n.getSlack()
+          usedByScore = n.getSingleCoreRunning()
+          if (slack + usedByScore >= 8):
+            if (delta > 0):
+              newlyPreparing = newlyPreparing + 1
+              delta = delta - 1
+              n.disallowSinglecore()
+              print 'INFO Preparing ',n.getName(),' for mcore.'
+    print 'INFO Started to prepare ',newlyPreparing,' nodes for mcore.'
+  else:
+    # We need less draining. 
+    # Go over all the nodes, in "furthest from being drained" order and find a set (size: delta)
+    # where each node is draining (i.e. onlyMulticore) and cancel drain on each of those
+    newlyCancelled = 0
+    for n in sorted(nodeList, reverse=False, key=lambda node: node.rank):
+      if(n.getOnlyMulticore() == True):
+        if (delta < 0):
+          newlyCancelled = newlyCancelled + 1
+          delta = delta + 1
+          n.allowSinglecore()
+          print 'INFO Cancelling drain of ',n.getName(),' for mcore.'
+    print 'INFO Cancelled drain of ',newlyCancelled,' nodes for mcore.'
+
 sys.exit(0)
 
