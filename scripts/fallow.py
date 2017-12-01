@@ -183,6 +183,39 @@ class Node :
     else:
       return False
 
+  def getAlwaysMulticore(self):
+    slot = self.slots[0]
+    if 'AlwaysMulticore' not in slot:
+      return False
+    om = slot['AlwaysMulticore']
+    true = 'True'
+    if om.lower() == true.lower():
+      return True
+    else:
+      return False
+
+  def getAlwaysSinglecore(self):
+    slot = self.slots[0]
+    if 'AlwaysSinglecore' not in slot:
+      return False
+    om = slot['AlwaysSinglecore']
+    true = 'True'
+    if om.lower() == true.lower():
+      return True
+    else:
+      return False
+
+  def getRunJobsATLAS(self):
+    slot = self.slots[0]
+    if 'RunJobsATLAS' not in slot:
+      return False
+    om = slot['RunJobsATLAS']
+    true = 'True'
+    if om.lower() == true.lower():
+      return True
+    else:
+      return False
+
   def getState(self):
     slot = self.slots[0]
     return slot['State']
@@ -331,7 +364,8 @@ nodeList = []
 for n in listNodes():
   node = Node(n)
   if (node.readNodeState()):
-    nodeList.append(node)
+    if (node.getRunJobsATLAS()):
+      nodeList.append(node)
 if (len(nodeList) == 0):
   print 'ERROR in main, could find no nodes at all'
   sys.exit(1)
@@ -342,8 +376,9 @@ if (len(nodeList) == 0):
 readyList = []
 for n in nodeList:
   if(n.getOnlyMulticore()):
-    if(n.getHasSlackOf8()):
-      readyList.append(n)
+    if(n.getAlwaysMulticore() == False):
+      if(n.getHasSlackOf8()):
+        readyList.append(n)
 if (len(readyList) > 0):
   time.sleep(negDelay)
 for n in readyList:
@@ -358,17 +393,20 @@ print 'INFO mcq', mcq, ', scq', scq, ', mcr', mcr, ', scr', scr
 if (mcq == 0 and scq == 0):
   print 'INFO Nothing at all queued, so all are automatically draining. Set onlyMulticore=0 on all nodes.'
   for n in nodeList:
-    n.allowSinglecore()
+    if(n.getAlwaysMulticore() == False):
+      n.allowSinglecore()
   sys.exit(0)
 if (mcq > 0 and scq == 0):
   print 'INFO Only mcore in queue, so all are automatically draining. Set onlyMulticore=0 on all nodes.'
   for n in nodeList:
-    n.allowSinglecore()
+    if(n.getAlwaysMulticore() == False):
+      n.allowSinglecore()
   sys.exit(0)
 if (mcq == 0 and scq > 0):
   print 'INFO Only score in the queue, so draining would be futile. Set onlyMulticore=0 on all nodes.'
   for n in nodeList:
-    n.allowSinglecore()
+    if(n.getAlwaysMulticore() == False):
+      n.allowSinglecore()
   sys.exit(0)
 
 if (mcq >  0 and scq > 0):
@@ -404,15 +442,16 @@ if (mcq >  0 and scq > 0):
     newlyPreparing = 0
     for n in sorted(nodeList, reverse=True, key=lambda node: node.rank):
       if(n.getOnlyMulticore() == False):
-        if(n.getHasSlackOf8 () == False):
-          slack = n.getSlack()
-          usedByScore = n.getSingleCoreRunning()
-          if (slack + usedByScore >= 8):
-            if (delta > 0):
-              newlyPreparing = newlyPreparing + 1
-              delta = delta - 1
-              n.disallowSinglecore()
-              print 'INFO Preparing ',n.getName(),' for mcore.'
+        if(n.getAlwaysSinglecore() == False):
+          if(n.getHasSlackOf8 () == False):
+            slack = n.getSlack()
+            usedByScore = n.getSingleCoreRunning()
+            if (slack + usedByScore >= 8):
+              if (delta > 0):
+                newlyPreparing = newlyPreparing + 1
+                delta = delta - 1
+                n.disallowSinglecore()
+                print 'INFO Preparing ',n.getName(),' for mcore.'
     print 'INFO Started to prepare ',newlyPreparing,' nodes for mcore.'
   else:
     # We need less draining. 
@@ -421,11 +460,12 @@ if (mcq >  0 and scq > 0):
     newlyCancelled = 0
     for n in sorted(nodeList, reverse=False, key=lambda node: node.rank):
       if(n.getOnlyMulticore() == True):
-        if (delta < 0):
-          newlyCancelled = newlyCancelled + 1
-          delta = delta + 1
-          n.allowSinglecore()
-          print 'INFO Cancelling drain of ',n.getName(),' for mcore.'
+        if (n.getAlwaysMulticore() == False):
+          if (delta < 0):
+            newlyCancelled = newlyCancelled + 1
+            delta = delta + 1
+            n.allowSinglecore()
+            print 'INFO Cancelling drain of ',n.getName(),' for mcore.'
     print 'INFO Cancelled drain of ',newlyCancelled,' nodes for mcore.'
 
 sys.exit(0)
