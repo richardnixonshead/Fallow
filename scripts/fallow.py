@@ -128,20 +128,25 @@ class Node :
       return 0
 
   def allowSinglecore(self):
-    self.slots[0]['OnlyMulticore'] = 'False'
-    worked,code,sout,serr = runCommand("condor_config_val -startd -set \"OnlyMulticore = False\" -name " + self.name)
-    if ((worked != True) or (code != 0 )):
-      print 'WARNING Odd result in allowSinglecore() for node ' + self.name
-      return False
-    
+    if not dryRun:
+      self.slots[0]['OnlyMulticore'] = 'False'
+      worked,code,sout,serr = runCommand("condor_config_val -startd -set \"OnlyMulticore = False\" -name " + self.name)
+      if ((worked != True) or (code != 0 )):
+        print 'WARNING Odd result in allowSinglecore() for node ' + self.name
+        return False
+    else:
+      print 'DRYRUN would set OnlyMulticore = False for ' + self.name
     return makeCmdTakeHold (self.name)
 
   def disallowSinglecore(self):
-    self.slots[0]['OnlyMulticore'] = 'True'
-    worked,code,sout,serr = runCommand("condor_config_val -startd -set \"OnlyMulticore = True\" -name " + self.name)
-    if ((worked != True) or (code != 0 )):
-      print 'WARNING Odd result in disallowSinglecore() for node ' + self.name
-      return False
+    if not dryRun:
+      self.slots[0]['OnlyMulticore'] = 'True'
+      worked,code,sout,serr = runCommand("condor_config_val -startd -set \"OnlyMulticore = True\" -name " + self.name)
+      if ((worked != True) or (code != 0 )):
+        print 'WARNING Odd result in disallowSinglecore() for node ' + self.name
+        return False
+    else:
+      print 'DRYRUN would set OnlyMulticore = True for ' + self.name
     return makeCmdTakeHold (self.name)
 
   def getRank (self):
@@ -207,9 +212,9 @@ class Node :
 
   def getRunJobsATLAS(self):
     slot = self.slots[0]
-    if 'RunJobsATLAS' not in slot:
+    if 'RunjobsATLAS' not in slot:
       return False
-    om = slot['RunJobsATLAS']
+    om = slot['RunjobsATLAS']
     true = 'True'
     if om.lower() == true.lower():
       return True
@@ -268,10 +273,13 @@ class Node :
 
 #--- sub
 def makeCmdTakeHold (node):
-  worked,code,sout,serr = runCommand("condor_reconfig " + node)
-  if ((worked != True) or (code != 0 ) ):
-    print 'WARNING odd result in makeCmdTakeHold() for node ' + node 
-    return False
+  if not dryRun:
+    worked,code,sout,serr = runCommand("condor_reconfig " + node)
+    if ((worked != True) or (code != 0 ) ):
+      print 'WARNING odd result in makeCmdTakeHold() for node ' + node
+      return False
+  else:
+    print 'DRYRUN would run condor_reconfig for ' + node
   return True
 
 #--- sub
@@ -319,6 +327,7 @@ def usage():
   print 'The options to this program are:'
   print ' -s  --setpoint      250     setpoint value'
   print ' -n  --negdelay       61     negotiator delay'
+  print ' -d  --dryrun        false   whether to make changes'
   print ''
 
 #--- sub
@@ -329,11 +338,12 @@ def initOptions(o):
   # Set defaults (not used)
   o['setpoint']      = 250
   o['negdelay']      = 61 
+  o['dryrun']        = False
 
   # Read the options
   try:
-    options, remainder = getopt.getopt(sys.argv[1:], 's:n:', 
-      [ 'setpoint=','negdelay='])
+    options, remainder = getopt.getopt(sys.argv[1:], 's:n:d',
+      [ 'setpoint=','negdelay=','dryrun='])
 
   except getopt.GetoptError:
     usage(); sys.exit(1)
@@ -348,6 +358,11 @@ def initOptions(o):
         o['setpoint'] =  int(arg)
       if opt in ('-n', '--negdelay'):
         o['negdelay'] =  int(arg)
+      if opt in ('-d'):
+        o['dryrun'] = True
+      if opt in ('--dryrun'):
+        if arg == "true":
+          o['dryrun'] = True
     except ValueError:
       usage(); sys.exit(1)
 
@@ -357,6 +372,7 @@ options = {}
 initOptions(options)
 setPoint = options['setpoint'] 
 negDelay = options['negdelay'] 
+dryRun = options['dryrun']
 
 q = Queue()
 
